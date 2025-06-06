@@ -73,13 +73,27 @@ function chapterskip(_, current)
             return
         end
     end
-    if skip then
-        if mp.get_property_native("playlist-count") == mp.get_property_native("playlist-pos-1") then
-            return mp.set_property("time-pos", mp.get_property_native("duration"))
+        if skip then
+        -- This block runs ONLY if the last chapter(s) were skippable,
+        -- because the loop finished without finding a non-skippable chapter to jump to.
+
+        -- Check mpv's setting for looping the current file.
+        local loop_status = mp.get_property("loop-file")
+
+        if loop_status ~= "no" then
+            -- If looping is enabled ("inf" or a number), repeat the file.
+            -- We do this by seeking to the very beginning.
+            mp.set_property("time-pos", 0)
+            -- Mark the final chapter as skipped for this play-through so it doesn't trigger again immediately.
+            skipped[skip] = true
+        else
+            -- If looping is disabled, end the file by seeking to its duration.
+            -- This lets mpv handle moving to the next playlist item naturally,
+            -- respecting any other settings like loop-playlist.
+            mp.set_property("time-pos", mp.get_property("duration"))
         end
-        mp.commandv("playlist-next")
     end
 end
 
 mp.observe_property("chapter", "number", chapterskip)
-mp.register_event("file-loaded", function() skipped = {} end)
+mp.register_event("playback-restart", function() skipped = {} end)
