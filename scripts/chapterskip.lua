@@ -1,15 +1,4 @@
--- chapterskip.lua
---
--- Ain't Nobody Got Time for That
---
--- This script skips chapters based on their title.
-
-local categories = {
-    prologue = "^Prologue/^Intro",
-    opening = "^OP/ OP$/^Opening",
-    ending = "^ED/ ED$/^Ending",
-    preview = "Preview$"
-}
+local mp_options = require "mp.options"
 
 local options = {
     enabled = true,
@@ -18,82 +7,83 @@ local options = {
     skip = ""
 }
 
-mp.options = require "mp.options"
+-- These tables are now at the top level to store our loaded config.
+local categories = {}
+local skipped = {}
 
-function matches(i, title)
-    for category in string.gmatch(options.skip, " *([^;]*[^; ]) *") do
-        if categories[category:lower()] then
-            if string.find(category:lower(), "^idx%-") == nil then
-                if title then
-                    for pattern in string.gmatch(categories[category:lower()], "([^/]+)") do
-                        if string.match(title, pattern) then
-                            return true
-                        end
-                    end
-                end
-            else
-                for pattern in string.gmatch(categories[category:lower()], "([^/]+)") do
-                    if tonumber(pattern) == i then
-                        return true
-                    end
-                end
-            end
+-- This function now ONLY reads and parses the config.
+-- It's called once at startup.
+function load_configuration()
+    mp_options.read_options(options, "chapterskip")
+
+    -- Clear old categories in case this is re-run.
+    categories = {}
+    
+    for definition in string.gmatch(options.categories, "([^;]+)") do
+        local name, patterns = string.match(definition, " *([^+>]*[^+> ]) *[+>](.*)")
+        if name and patterns then
+            categories[name:lower()] = patterns
         end
     end
 end
 
-local skipped = {}
-local parsed = {}
-
-function chapterskip(_, current)
-    mp.options.read_options(options, "chapterskip")
+-- The main function is now much lighter. It only does the matching.
+function chapterskip(_, current_chapter)
     if not options.enabled then return end
-    for category in string.gmatch(options.categories, "([^;]+)") do
-        name, patterns = string.match(category, " *([^+>]*[^+> ]) *[+>](.*)")
-        if name then
-            categories[name:lower()] = patterns
-        elseif not parsed[category] then
-            mp.msg.warn("Improper category definition: " .. category)
-        end
-        parsed[category] = true
-    end
+
     local chapters = mp.get_property_native("chapter-list")
-    local skip = false
+    if not chapters then return end
+
+    local skip_target = false
     for i, chapter in ipairs(chapters) do
-        if (not options.skip_once or not skipped[i]) and matches(i, chapter.title) then
-            if i == current + 1 or skip == i - 1 then
-                if skip then
-                    skipped[skip] = true
+        local should_skip = false
+        if chapter.title then
+            -- Check for a match directly inside the loop.
+            for category_name in string.gmatch(options.skip, "[^;]+") do
+                -- Trim whitespace from category name.
+                category_name = category_name:lower():match("^%s*(.-)%s*$")
+                if categories[category_name] then
+                    for pattern in string.gmatch(categories[category_name], "([^|]+)") do
+                        if string.match(chapter.title, pattern) then
+                            should_skip = true
+                            break
+                        end
+                    end
                 end
-                skip = i
+                if should_skip then break end
             end
-        elseif skip then
+        end
+
+        if (not options.skip_once or not skipped[i]) and should_skip then
+            if i == current_chapter + 1 or skip_target == i - 1 then
+                if skip_target then skipped[skip_target] = true end
+                skip_target = i
+            end
+        elseif skip_target then
             mp.set_property("time-pos", chapter.time)
-            skipped[skip] = true
+            skipped[skip_target] = true
             return
         end
     end
-        if skip then
-        -- This block runs ONLY if the last chapter(s) were skippable,
-        -- because the loop finished without finding a non-skippable chapter to jump to.
 
-        -- Check mpv's setting for looping the current file.
-        local loop_status = mp.get_property("loop-file")
-
-        if loop_status ~= "no" then
-            -- If looping is enabled ("inf" or a number), repeat the file.
-            -- We do this by seeking to the very beginning.
+    -- This part runs if the last chapter(s) were skippable.
+    if skip_target then
+        skipped[skip_target] = true
+        if mp.get_property("loop-file") ~= "no" then
             mp.set_property("time-pos", 0)
-            -- Mark the final chapter as skipped for this play-through so it doesn't trigger again immediately.
-            skipped[skip] = true
         else
-            -- If looping is disabled, end the file by seeking to its duration.
-            -- This lets mpv handle moving to the next playlist item naturally,
-            -- respecting any other settings like loop-playlist.
             mp.set_property("time-pos", mp.get_property("duration"))
         end
     end
 end
 
+-- SCRIPT INITIALIZATION --
+
+-- 1. Read the config file when the script is first loaded.
+load_configuration()
+
+-- 2. Set up the main event listener.
 mp.observe_property("chapter", "number", chapterskip)
+
+-- 3. Set up the listener for restarting playback.
 mp.register_event("playback-restart", function() skipped = {} end)
