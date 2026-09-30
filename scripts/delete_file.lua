@@ -10,6 +10,7 @@ function contains_item(l, i)
          return true
       end
    end
+
    mp.osd_message("deleting current file")
    return false
 end
@@ -19,21 +20,35 @@ function mark_delete()
    local file_path = mp.get_property_native("path")
    local s = file_path:find(work_dir, 0, true)
    local final_path
+
    if s and s == 0 then
       final_path = file_path
    else
       final_path = utils.join_path(work_dir, file_path)
    end
+
    if not contains_item(del_list, final_path) then
       table.insert(del_list, final_path)
    end
 end
 
 function delete()
-   for i, v in pairs(del_list) do
-      print("deleting: "..v)
-      os.remove(v)
-   end
+    for i, v in pairs(del_list) do
+        print("moving to trash: " .. v)
+
+        local command = string.format(
+            'powershell.exe -NoProfile -Command "Move-Item -LiteralPath \\"%s\\" -Destination \\"C:\\Users\\Benas\\Desktop\\Toks\\ToksTrash\\" -Force"',
+            v:gsub('"', '\\"')
+        )
+
+        local res = os.execute(command)
+
+        if res then
+            print("moved to trash: " .. v)
+        else
+            print("failed to move to trash: " .. v)
+        end
+    end
 end
 
 mp.add_key_binding("?", "delete_file", mark_delete)
