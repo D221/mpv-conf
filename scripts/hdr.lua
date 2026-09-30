@@ -18,12 +18,28 @@ local function executePowerShell(args)
     end
 end
 
-mp.register_event("end-file", function()
+local function disableHDR()
     if HDR_enabled then
         executePowerShell({HDRCmd_path, 'off'})
         HDR_enabled = false
     end
+end
+
+-- Only turn HDR off when mpv actually has nothing left to play (end of
+-- playlist, stopped, or quitting). This is what gives us the "look ahead":
+-- during an HDR -> HDR transition in a playlist, mpv goes straight from one
+-- file to the next without ever becoming idle, so this never fires and the
+-- video-params observer below just leaves HDR on, avoiding the off/on flash.
+-- A transition to SDR content is still handled instantly by the
+-- video-params observer below, since that's a real content change.
+mp.observe_property("idle-active", "bool", function(_, idle)
+    if idle then
+        disableHDR()
+    end
 end)
+
+-- Safety net in case mpv exits without idle-active ever firing (e.g. hard quit).
+mp.register_event("shutdown", disableHDR)
 
 mp.observe_property("video-params", "native", function(_, params)
     if not params or not params.primaries or not params.gamma then
@@ -39,7 +55,6 @@ mp.observe_property("video-params", "native", function(_, params)
             end
         end
     elseif HDR_enabled then
-        executePowerShell({HDRCmd_path, 'off'})
-        HDR_enabled = false
+        disableHDR()
     end
 end)

@@ -61,7 +61,7 @@ end
 
 local EXTENSIONS_VIDEO_DEFAULT = Set {
     '3g2', '3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mj2', 'mkv', 'mov',
-    'mp4', 'mpeg', 'mpg', 'ogv', 'rmvb', 'webm', 'wmv', 'y4m'
+    'mp4', 'mpeg', 'mpg', 'ogv', 'rmvb', 'webm', 'wmv', 'y4m', 'ts', 'vob', 'divx', 'rm'
 }
 
 local EXTENSIONS_AUDIO_DEFAULT = Set {
